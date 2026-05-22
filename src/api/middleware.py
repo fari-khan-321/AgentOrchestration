@@ -49,7 +49,45 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         duration = time.time() - start
         logger.info(f"{request.method} {request.url.path} {response.status_code} {duration:.3f}s")
         return response
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+import logging
 
+logger = logging.getLogger(__name__)
+
+class AuthMfaMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: callable) -> Response:
+        # Check if request targets privileged API (e.g., key creation)
+        is_privileged = request.url.path.startswith("/api/v2/privileged")
+
+        # Extract Bearer token for auth
+        token = request.headers.get("Authorization")
+        if token and token.startswith("Bearer "):
+            token = token[len("Bearer "):]
+        else:
+            return Response(status_code=401, content="Missing or invalid Authorization header")
+
+        # MFA check for privileged operations
+        mfa_verified = request.session.get("mfa_verified", False)
+        if is_privileged and not mfa_verified:
+            return Response(status_code=403, content="MFA verification required for privileged access")
+
+        # Proceed to next middleware/handler
+        response = await call_next(request)
+        return response
+
+# Example MFA verification endpoint (to set session flag)
+async def verify_mfa(request: Request):
+    otp = request.json().get("otp")
+    user_id = request.session.get("user_id")
+    
+    # Replace with actual MFA validation logic
+    if validate_otp(user_id, otp):
+        request.session["mfa_verified"] = True
+        return Response(status_code=200, content="MFA verified")
+    else:
+        return Response(status_code=401, content="Invalid OTP")
 # 2019-03-01T18:35:19 update
 
 # 2019-04-03T13:22:05 update
